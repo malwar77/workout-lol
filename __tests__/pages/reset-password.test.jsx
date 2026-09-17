@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import ResetPasswordPage, { REDIRECT_DELAY_MS } from '../../pages/reset-password'
 
@@ -9,6 +9,8 @@ jest.mock('next/router', () => ({
   useRouter: () => ({
     isReady: true,
     query: mockRouterQuery,
+    pathname: '/reset-password',
+    asPath: '/reset-password',
     push: mockPush,
   }),
 }))
@@ -29,6 +31,10 @@ describe('Reset Password Page UI', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     global.fetch = jest.fn()
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
   })
 
   describe('Form Routing / Conditional Rendering', () => {
@@ -63,9 +69,11 @@ describe('Reset Password Page UI', () => {
       fireEvent.change(screen.getByLabelText(/email address/i), {
         target: { value: 'notanemail' },
       })
-      fireEvent.click(screen.getByRole('button', { name: /send reset link/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /send reset link/i }))
+      })
 
-      expect(await screen.findByText(/please enter a valid email address/i)).toBeInTheDocument()
+      expect(screen.getByText(/please enter a valid email address/i)).toBeInTheDocument()
       expect(global.fetch).not.toHaveBeenCalled()
       expect(mockPush).not.toHaveBeenCalled()
     })
@@ -81,11 +89,11 @@ describe('Reset Password Page UI', () => {
       fireEvent.change(screen.getByLabelText(/email address/i), {
         target: { value: 'athlete@workout.lol' },
       })
-      fireEvent.click(screen.getByRole('button', { name: /send reset link/i }))
-
-      await waitFor(() => {
-        expect(screen.getByText(/check your inbox/i)).toBeInTheDocument()
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /send reset link/i }))
       })
+
+      expect(screen.getByText(/check your inbox/i)).toBeInTheDocument()
       expect(mockPush).not.toHaveBeenCalled()
     })
   })
@@ -111,11 +119,11 @@ describe('Reset Password Page UI', () => {
       fireEvent.change(screen.getByLabelText(/confirm new password/i), {
         target: { value: 'securepassword123' },
       })
-      fireEvent.click(screen.getByRole('button', { name: /update password/i }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /update password/i }))
+      })
 
-      expect(
-        await screen.findByText(/this reset link has expired/i)
-      ).toBeInTheDocument()
+      expect(screen.getByText(/this reset link has expired/i)).toBeInTheDocument()
       expect(mockPush).not.toHaveBeenCalled()
     })
 
@@ -134,22 +142,29 @@ describe('Reset Password Page UI', () => {
       fireEvent.change(screen.getByLabelText(/confirm new password/i), {
         target: { value: 'brandNewPassword123' },
       })
-      fireEvent.click(screen.getByRole('button', { name: /update password/i }))
 
+      // Flush microtasks from async fetch resolution and state update
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /update password/i }))
+      })
+
+      // Success alert rendered immediately
       expect(
-        await screen.findByText(/your password has been reset successfully/i)
+        screen.getByText(/your password has been reset successfully/i)
       ).toBeInTheDocument()
 
-      // Before threshold
-      jest.advanceTimersByTime(REDIRECT_DELAY_MS - 1)
+      // Before threshold: exactly REDIRECT_DELAY_MS - 1
+      act(() => {
+        jest.advanceTimersByTime(REDIRECT_DELAY_MS - 1)
+      })
       expect(mockPush).not.toHaveBeenCalled()
 
-      // At threshold
-      jest.advanceTimersByTime(1)
+      // At/after threshold: advancing remaining 1 ms (reaching REDIRECT_DELAY_MS)
+      act(() => {
+        jest.advanceTimersByTime(1)
+      })
       expect(mockPush).toHaveBeenCalledTimes(1)
       expect(mockPush).toHaveBeenCalledWith('/sign-up')
-
-      jest.useRealTimers()
     })
   })
 })
